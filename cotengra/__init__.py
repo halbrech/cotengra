@@ -35,6 +35,7 @@ from .pathfinders import path_greedy
 from .pathfinders import path_igraph
 from .pathfinders import path_kahypar
 from .pathfinders import path_labels
+from .pathfinders import path_modularity
 
 from .pathfinders.path_quickbb import QuickBBOptimizer, optimize_quickbb
 from .pathfinders.path_flowcutter import (
