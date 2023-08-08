@@ -389,26 +389,16 @@ def modularityH(H,A,ddeg=False):
 ##########################################################
 # my implementation
 
-def modularitygain (edge, edges, nodes, weights, degs, vol, volall):
-    clusters = set(edges[edge])
-    commonedges = []
-    for e in set.union(*[set(nodes[node]) for node in clusters]):
-        if set(edges[e]).issubset(clusters): commonedges.append(e)
-    gain = (sum([weights['edge_weight_map'][e] for e in commonedges]) + sum([degs[d]*(sum([vol[cluster] ** d for cluster in clusters])-sum([vol[cluster] for cluster in clusters]) ** d)/(volall ** d) for d in range(2, len(degs))]))/sum(weights['edge_weights'])
-    #print(sum([degs[d]*(sum([vol[cluster] ** d for cluster in clusters])-sum([vol[cluster] for cluster in clusters]) ** d)/(volall ** d) for d in range(2, len(degs))])/sum(weights['edge_weights']))
-    #print(sum([weights['edge_weight_map'][e] for e in commonedges])/sum(weights['edge_weights']))
-    #print(gain)
-    return gain, commonedges
-
-def maxmodularitygain(edges, nodes, weights, degs, vol, volall):
-    maxgain = None
-    maxedges = None
-    for edge in edges:
-        gain, commonedges = modularitygain(edge, edges, nodes, weights, degs, vol, volall)
-        if maxgain == None or gain > maxgain:
-            maxgain = gain
-            maxedges = commonedges
-    return maxgain, maxedges
+def modularitygain(edge, edges, nodes, weights, degs, vol, volall):
+    clusternodes = set(edges[edge])
+    clusterincidentedges = set.union(*[set(nodes[node]) for node in clusternodes])
+    intraclusteredges = []
+    interclusteredges = []
+    for e in clusterincidentedges:
+        if set(edges[e]).issubset(clusternodes): intraclusteredges.append(e)
+        else: interclusteredges.append(e)
+    gain = (sum([weights['edge_weight_map'][e] for e in intraclusteredges]) + sum([degs[d]*(sum([vol[cluster] ** d for cluster in clusternodes])-sum([vol[cluster] for cluster in clusternodes]) ** d)/(volall ** d) for d in range(2, len(degs))]))/sum(weights['edge_weights'])
+    return gain, clusternodes, intraclusteredges, interclusteredges
 
 def mycmn(
     inputs,
@@ -429,31 +419,34 @@ def mycmn(
     degs = [0 for _ in range(hg.get_num_nodes())]
     for k, v in hg.edges.items():
         if len(v) != 1: degs[len(v)] += weights['edge_weight_map'][k]
-    clusterlabels = {i:frozenset({i}) for i in range(hg.get_num_nodes())}
+    
+    gainlookup = {edge : modularitygain(edge, edges, nodes, weights, degs, vol, volall) for edge in edges}
 
-    n = hg.get_num_nodes() - 1
-    path =[] 
+    clusterid = hg.get_num_nodes() - 1
+
+    path =[]
+    clusterlabels = {i:frozenset({i}) for i in range(hg.get_num_nodes())}
     while len(edges) >= 1:
-        #compute contraction
-        gain, contractionedges = maxmodularitygain(edges, nodes, weights, degs, vol, volall)
-        print(f"{len(nodes)}, {gain}")
-        if gain >= 0 or len(nodes) >= 16:
-            clusterset = set.union(*[set(edges[edge]) for edge in contractionedges])
-            clusteredges = set.union(*[set(nodes[node]) for node in clusterset]).difference(set(contractionedges))
+        _, (maxgain, clusternodes, intraclusteredges, interclusteredges) = max(gainlookup.items(), key = lambda x: x[1][0])
+        if maxgain >= 0 or len(nodes) >= 16:
+            print(f"{maxgain}, {len(nodes)}")
             #delete intra cluster edges
-            for contractionedge in contractionedges: edges.pop(contractionedge)
-            n += 1
+            print(intraclusteredges)
+            for contractionedge in intraclusteredges:
+                edges.pop(contractionedge)
+                gainlookup.pop(contractionedge)
             #update cluster node
-            nodes.update({n : clusteredges})
-            for node in clusterset:
-                nodes.pop(node)
+            clusterid += 1
+            for node in clusternodes: nodes.pop(node)
             #update vol
-            vol[n] = sum([vol[i] for i in clusterset])
+            nodes.update({clusterid : interclusteredges})
+            vol[clusterid] = sum([vol[i] for i in clusternodes])
             #update surrounding edges
-            edges.update({edge : tuple(map(lambda x: n if x in clusterset else x,list(edges[edge]))) for edge in clusteredges})
-            path.append(tuple(clusterset))
+            edges.update({edge : tuple(map(lambda x: clusterid if x in clusternodes else x,list(edges[edge]))) for edge in interclusteredges})
+            path.append(tuple(clusternodes))
             #update clusterlabels
-            clusterlabels.update({n : frozenset.union(*[clusterlabels.pop(node) for node in clusterset])})
+            clusterlabels.update({clusterid : frozenset.union(*[clusterlabels.pop(node) for node in clusternodes])})
+            gainlookup.update({edge : modularitygain(edge, edges, nodes, weights, degs, vol, volall) for edge in interclusteredges})
         else:
             break
     tree = ContractionTree.from_path(inputs, output, size_dict, ssa_path=path)
