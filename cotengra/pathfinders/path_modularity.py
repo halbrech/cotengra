@@ -4,6 +4,7 @@ import collections
 
 
 from cotengra.core import PartitionTreeBuilder
+from cotengra.core import ContractionTree
 from cotengra.hypergraph import HyperGraph
 from cotengra.hyperoptimizers.hyper import register_hyper_function
 
@@ -386,6 +387,78 @@ def modularityH(H,A,ddeg=False):
         return(EdgeContribution(H,A,m) - DegreeTax(A,m,D))
 
 ##########################################################
+# my implementation
+
+def modularitygain (edge, edges, nodes, weights, degs, vol, volall):
+    clusters = set(edges[edge])
+    commonedges = []
+    for e in set.union(*[set(nodes[node]) for node in clusters]):
+        if set(edges[e]).issubset(clusters): commonedges.append(e)
+    gain = (sum([weights['edge_weight_map'][e] for e in commonedges]) + sum([degs[d]*(sum([vol[cluster] ** d for cluster in clusters])-sum([vol[cluster] for cluster in clusters]) ** d)/(volall ** d) for d in range(2, len(degs))]))/sum(weights['edge_weights'])
+    #print(sum([degs[d]*(sum([vol[cluster] ** d for cluster in clusters])-sum([vol[cluster] for cluster in clusters]) ** d)/(volall ** d) for d in range(2, len(degs))])/sum(weights['edge_weights']))
+    #print(sum([weights['edge_weight_map'][e] for e in commonedges])/sum(weights['edge_weights']))
+    #print(gain)
+    return gain, commonedges
+
+def maxmodularitygain(edges, nodes, weights, degs, vol, volall):
+    maxgain = None
+    maxedges = None
+    for edge in edges:
+        gain, commonedges = modularitygain(edge, edges, nodes, weights, degs, vol, volall)
+        if maxgain == None or gain > maxgain:
+            maxgain = gain
+            maxedges = commonedges
+    return maxgain, maxedges
+
+def mycmn(
+    inputs,
+    output,
+    size_dict,
+    weight_nodes="linear",
+    weight_edges="log",
+    parts = 2,
+):
+    hg = HyperGraph(inputs, output, size_dict)
+    for edge in output: hg.remove_edge(edge)
+
+    edges = hg.edges.copy()
+    nodes = hg.nodes.copy()
+    weights = hg.compute_weights(weight_nodes = weight_nodes, weight_edges = weight_edges)
+    vol = {k:v for k,v in enumerate(weights['node_weights'])}
+    volall = sum(vol.values())
+    degs = [0 for _ in range(hg.get_num_nodes())]
+    for k, v in hg.edges.items():
+        if len(v) != 1: degs[len(v)] += weights['edge_weight_map'][k]
+    clusterlabels = {i:frozenset({i}) for i in range(hg.get_num_nodes())}
+
+    n = hg.get_num_nodes() - 1
+    path =[] 
+    while len(edges) >= 1:
+        #compute contraction
+        gain, contractionedges = maxmodularitygain(edges, nodes, weights, degs, vol, volall)
+        print(f"{len(nodes)}, {gain}")
+        if gain >= 0 or len(nodes) >= 16:
+            clusterset = set.union(*[set(edges[edge]) for edge in contractionedges])
+            clusteredges = set.union(*[set(nodes[node]) for node in clusterset]).difference(set(contractionedges))
+            #delete intra cluster edges
+            for contractionedge in contractionedges: edges.pop(contractionedge)
+            n += 1
+            #update cluster node
+            nodes.update({n : clusteredges})
+            for node in clusterset:
+                nodes.pop(node)
+            #update vol
+            vol[n] = sum([vol[i] for i in clusterset])
+            #update surrounding edges
+            edges.update({edge : tuple(map(lambda x: n if x in clusterset else x,list(edges[edge]))) for edge in clusteredges})
+            path.append(tuple(clusterset))
+            #update clusterlabels
+            clusterlabels.update({n : frozenset.union(*[clusterlabels.pop(node) for node in clusterset])})
+        else:
+            break
+    tree = ContractionTree.from_path(inputs, output, size_dict, ssa_path=path)
+    tree.contract_nodes(list(clusterlabels.values()), optimize="auto-hq", check=True)
+    return tree
 
 def cnm_partition(
     inputs,
@@ -418,6 +491,14 @@ labels_to_tree = PartitionTreeBuilder(cnm_partition)
 register_hyper_function(
     name="cmn",
     ssa_func=labels_to_tree.trial_fn,
+    space={
+        "parts": {"type": "INT", "min": 2, "max": 2},
+    },
+)
+
+register_hyper_function(
+    name="mycmn",
+    ssa_func=mycmn,
     space={
         "parts": {"type": "INT", "min": 2, "max": 2},
     },
