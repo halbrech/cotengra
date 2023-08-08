@@ -393,6 +393,7 @@ def cnm_partition(
     size_dict,
     weight_nodes="linear",
     weight_edges="log",
+    parts = 2,
 ):
     hg = HyperGraph(inputs, output, size_dict)
     n = hg.get_num_nodes()
@@ -418,6 +419,6 @@ register_hyper_function(
     name="cmn",
     ssa_func=labels_to_tree.trial_fn,
     space={
-        "cutoff": {"type": "INT", "min": 10, "max": 10},
+        "parts": {"type": "INT", "min": 2, "max": 2},
     },
 )
