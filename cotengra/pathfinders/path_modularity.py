@@ -11,7 +11,6 @@ import numpy as np
 from cotengra.core import PartitionTreeBuilder
 from cotengra.core import ContractionTree
 from cotengra.hypergraph import HyperGraph
-from cotengra.hypergraph import calc_edge_weight_float
 from cotengra.hyperoptimizers.hyper import register_hyper_function
 
 def modularitygain(edge, edges, sumedges, nodes, weights, degs, vol, volall, alpha):
@@ -120,20 +119,21 @@ def louvain(inputs,
     weight_edges="log",
     change_mode = "iter",
     community_factor = 2,
+    b = 0.5,
+    beta = 1.0,
     parts = 2,
     ):
     seed = random.randint(0, 9999999)
     hg = to_hypernetxgraph(inputs, output, size_dict, weight_nodes, weight_edges)
-    hl = hLouvain(hg,hmod_type=hmod.strict, 
+    hl = hLouvain(HG = hg,hmod_type=hmod.strict,
+                                    beta = beta,
                                     delta_it = 0.0001, 
                                     delta_phase = 0.0001,
                                     random_seed = seed,
                                     )
     alphas = []
-    d = 0
-    b = 0.5
     for i in range(30):
-        alphas.append(1-((1-b)**i)*(1-d))
+        alphas.append(1-((1-b)**i))
     A, q2, alphas_out = hl.combined_louvain_alphas(alphas = alphas,
                                                 change_mode = change_mode,
                                                 random_seed = seed,
@@ -164,7 +164,9 @@ register_hyper_function(
     space={
         "weight_edges": {"type": "STRING", "options": ["const", "log"]},
         "change_mode": {"type": "STRING", "options": ["iter", "phase", "communities"]},
-        "community_factor": {"type": "INT", "min": 2, "max": 4},    
+        "community_factor": {"type": "INT", "min": 2, "max": 4},
+        "beta": {"type": "FLOAT", "min": 0.7, "max": 1.0},
+        "b": {"type": "FLOAT", "min": 0.2, "max": 0.8},
     },
     constants={
         "parts": 2,
