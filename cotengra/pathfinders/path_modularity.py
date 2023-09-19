@@ -32,6 +32,7 @@ def mycmn(
     weight_nodes="linear",
     weight_edges="log",
     alpha = 2,
+    temp = 1,
     parts = 2,
 ):
     hg = HyperGraph(inputs, output, size_dict)
@@ -54,7 +55,14 @@ def mycmn(
     path =[]
     clusterlabels = {i:frozenset({i}) for i in range(hg.get_num_nodes())}
     while len(edges) >= 1:
-        _, (maxgain, clusternodes, intraclusteredges, interclusteredges) = max(gainlookup.items(), key = lambda x: x[1][0])
+        # choose random from the 5 max values
+        n = len(gainlookup)
+        maxgain, clusternodes, intraclusteredges, interclusteredges = random.choices(sorted(gainlookup.values(), key = lambda x: x[0], reverse = True), [(1-temp)**(i)*temp for i in range(n)])[0]
+        # Boltzmann weighted choice
+        #choice = random.choices(list(gainlookup.keys()), [math.exp(max(v[0],0)/temp)-1 for v in gainlookup.values()])
+        #maxgain, clusternodes, intraclusteredges, interclusteredges = gainlookup[choice[0]]
+        # choose max value
+        #maxgain, clusternodes, intraclusteredges, interclusteredges = max(gainlookup.values(), key = lambda x: x[0])
         if maxgain >= 0 or len(nodes) >= 16:
             #delete intra cluster edges
             for contractionedge in intraclusteredges:
@@ -98,7 +106,7 @@ def kumar(inputs,
     parts = 2,
     ):
     hg = to_hypernetxgraph(inputs, output, size_dict, weight_nodes, weight_edges)
-    sets = hmod.kumar(hg, 0.01, 100)
+    sets = hmod.kumar(hg, 0.01)
     #cluster = len(sets)
     membership = [-1 for _ in range(hg.number_of_nodes())]
     for i,s in enumerate(sets):
@@ -152,6 +160,7 @@ register_hyper_function(
     space={
         "weight_edges": {"type": "STRING", "options": ["const", "log"]},
         "alpha": {"type": "FLOAT", "min": 0.0, "max": 1.0},
+        "temp": {"type": "FLOAT", "min": 0.1, "max": 1.0},
     },
     constants={
         "parts": 2,
@@ -163,9 +172,9 @@ register_hyper_function(
     ssa_func=PartitionTreeBuilder(louvain).trial_fn,
     space={
         "weight_edges": {"type": "STRING", "options": ["const", "log"]},
-        "change_mode": {"type": "STRING", "options": ["iter", "phase", "communities"]},
+        "change_mode": {"type": "STRING", "options": ["iter", "phase", "communities, modifications"]},
         "community_factor": {"type": "INT", "min": 2, "max": 4},
-        "beta": {"type": "FLOAT", "min": 0.7, "max": 1.0},
+        "beta": {"type": "FLOAT", "min": 0.9, "max": 1.0},
         "b": {"type": "FLOAT", "min": 0.2, "max": 0.8},
     },
     constants={
